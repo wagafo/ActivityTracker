@@ -2,7 +2,7 @@ import QtQuick 2.4
 import QtPositioning 5.3
 import Ubuntu.Components 1.3
 import QtQuick.Layouts 1.1
-import io.thp.pyotherside 1.5
+import io.thp.pyotherside 1.4
 import QtSystemInfo 5.0
 import QtLocation 5.3
 //import Ubuntu.Components.ListItems 1.3 as ListItem
