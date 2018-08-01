@@ -9,8 +9,10 @@ import QtLocation 5.3
 import Ubuntu.Components.Popups 1.3
 import "./lib/polyline.js" as Pl
 import UserMetrics 0.1
+import Qt.labs.settings 1.0
 
 MainView {
+   id: mainView
    // objectName for functional testing purposes (autopilot-qt5)
    objectName: "mainView"
 
@@ -39,6 +41,11 @@ MainView {
    ScreenSaver {
       id: screenSaver
       screenSaverEnabled: !am_running
+   }
+   Settings {
+      id: persistentSettings
+      property int pointsInterval: 5000
+      onPointsIntervalChanged: console.log("pointsInterval has changed: "+pointsInterval)
    }
 
    function stopwatch(seconds) {
@@ -230,6 +237,7 @@ MainView {
          EmptyState {
             title: i18n.tr("No saved activities")
             iconSource: Qt.resolvedUrl("./images/runman.svg")
+            iconColor: UbuntuColors.jet
             subTitle: i18n.tr("Swipe up to log a new activity")
             anchors.centerIn: parent
          }
@@ -286,6 +294,17 @@ MainView {
                }
                ]
             }
+
+            trailingActions: ListItemActions {
+               actions: [
+               Action {
+                  iconName: "add"
+                  onTriggered: {
+                     stack.push(Qt.resolvedUrl('WebMapQml.qml'), {polyline: polyline})
+                  }
+               }
+               ]
+            }
          }
       }
       Metric {
@@ -319,7 +338,10 @@ MainView {
 
       BottomEdge {
          id:newrunEdge
-         hint.text: i18n.tr("Log new Activity")
+         hint {
+            text: i18n.tr("Log new Activity")
+            iconSource: "images/runman.svg"
+         }
          preloadContent: true
          contentComponent: Rectangle {
             color: "white"
@@ -332,7 +354,7 @@ MainView {
                   title: (am_running) ? i18n.tr("Activity in Progress") : i18n.tr("New Activity")
                   leadingActionBar.actions: [
                   Action {
-                     iconName: "back"
+                     iconName: "down"
                      onTriggered: {
                         if (am_running) {
                            PopupUtils.open(areyousure)
@@ -363,7 +385,7 @@ MainView {
                      text: i18n.tr("Are you sure you want to cancel the activity?")
                      Button {
                         id: yesimsure
-                        text: "Yes I'm sure"
+                        text: i18n.tr("Yes I'm sure")
                         color: UbuntuColors.green
                         onClicked: {
                            PopupUtils.close(areyousuredialog)
@@ -406,7 +428,7 @@ MainView {
                      if (gpxx && am_running){
 
                         if (src.position.latitudeValid && src.position.longitudeValid && src.position.altitudeValid) {
-                           pygpx.addpoint(gpxx,coord.latitude,coord.longitude,coord.altitude)
+                           //pygpx.addpoint(gpxx,coord.latitude,coord.longitude,coord.altitude)
                            pline.addCoordinate(QtPositioning.coordinate(coord.latitude,coord.longitude, coord.altitude))
                            pygpx.current_distance(gpxx)
                            distlabel.text = dist
@@ -423,6 +445,21 @@ MainView {
                         } else {
                            speedlabel.text = i18n.tr("No data")
                         }
+                     }
+                  }
+               }
+               Timer {
+                  id: loggingpoints
+                  interval: 5000; running: true; repeat: true
+                  onTriggered: {
+                     var coord = src.position.coordinate
+                     if (gpxx && am_running){
+
+                        if (src.position.latitudeValid && src.position.longitudeValid && src.position.altitudeValid) {
+                           pygpx.addpoint(gpxx,coord.latitude,coord.longitude,coord.altitude)
+                           console.log("Coordinate:", coord.longitude, coord.latitude)
+                        }
+
                      }
                   }
                }
@@ -472,13 +509,55 @@ MainView {
                   id: dialog
                   Dialog {
                      id: dialogue
-                     title: i18n.tr("Save Activity")
-                     text: ""
+                     title: i18n.tr("Stop Recording Activity?")
+                     text: i18n.tr("Do you want to stop recording your activity?")
+                     Button {
+                        text: i18n.tr("Yes, Stop!")
+                        height: units.gu(10)
+                        color: UbuntuColors.green
+                        onClicked: {
+                           am_running = false
+                           timer.stop()
+                           PopupUtils.close(dialogue)
+                           PopupUtils.open(save_dialog)
+                        }
+                     }
+                     Button {
+                        text: i18n.tr("No, Continue")
+                        height: units.gu(10)
+                        color: UbuntuColors.red
+                        onClicked: {
+                           PopupUtils.close(dialogue)
+                        }
+                     }
+                  }
+               }//Dialog component
 
+               Component {
+                  id: save_dialog
+                  Dialog {
+                     id: save_dialogue
+                     title: i18n.tr("Save Activity")
+                     text: i18n.tr("Select the type and the name of your activity")
+
+                     Label {
+                        text: i18n.tr("Name")
+                     }
+
+                     TextField {
+                        placeholderText: os.model[os.selectedIndex] + " " + day
+                        id: tf
+                        property var name: displayText == "" ? placeholderText : displayText
+                        Component.onCompleted: {
+                           var d = new Date();
+                           day = d.toDateString();
+                        }
+                     }
                      OptionSelector {
                         id: os
                         text: i18n.tr("Activity Type")
-                        expanded: true
+                        currentlyExpanded: true
+                        containerHeight: itemHeight*3.5
                         model: [
                         // FIXME: some codes depends on the name of the activity
                         // cannot translate atm...
@@ -488,29 +567,17 @@ MainView {
                         /*i18n.tr(*/"Drive"/*)*/,
                         /*i18n.tr(*/"Hike"/*)*/
                         ]
-                     }
-                     Label {
-                        text: i18n.tr("Name")
-                     }
-
-                     TextField {
-                        text: os.model[os.selectedIndex] + " " + day
-                        id: tf
-                        Component.onCompleted: {
-                           var d = new Date();
-                           day = d.toDateString();
-                        }
+                        onExpansionCompleted: tf.focus = true
                      }
                      Row {
-
+                        spacing: units.gu(1)
                         Button {
                            text: i18n.tr("Save Activity")
-                           height: units.gu(10)
-                           width: parent.width /2
+                           height: units.gu(8)
+                           width: parent.width /2 -units.gu(0.5)
                            color: UbuntuColors.green
                            onClicked: {
-                              PopupUtils.close(dialogue)
-                              pygpx.writeit(gpxx,tf.displayText,os.model[os.selectedIndex])
+                              pygpx.writeit(gpxx,tf.name,os.model[os.selectedIndex])
                               console.log(tf.displayText)
                               console.log("----------restart------------")
                               counter = 0
@@ -535,17 +602,17 @@ MainView {
                                  drivedist.increment(distfloat)
                               }
                               pygpx.get_runs(listModel)
-                              //stack.pop()
-
+                              PopupUtils.close(save_dialogue)
+                              newrunEdge.collapse()
                            }
                         }
                         Button {
                            text: i18n.tr("Cancel")
-                           height: units.gu(10)
-                           width: parent.width / 2
+                           height: units.gu(8)
+                           width: parent.width /2 -units.gu(0.5)
                            color: UbuntuColors.red
                            onClicked: {
-                              PopupUtils.close(dialogue)
+                              PopupUtils.close(save_dialogue)
                               am_running = true
                               timer.start()
                            }
@@ -618,8 +685,8 @@ MainView {
                         //   height:parent.height
                         onClicked: {
                            // src.stop()
-                           am_running = false
-                           timer.stop()
+                           // am_running = false
+                           // timer.stop()
                            PopupUtils.open(dialog)
 
                         }
